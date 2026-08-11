@@ -1,10 +1,18 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  PREMIUM_PRICE,
+  PREMIUM_PRICE_NOTE,
+  whatsappUrl,
+} from './config'
+import {
   CATEGORIES,
+  matchOpportunities,
   OPPORTUNITIES,
+  SKILLS,
   type Category,
   type Opportunity,
+  type SkillId,
 } from './data/opportunities'
 
 const fadeUp = {
@@ -20,35 +28,95 @@ const fadeUp = {
   }),
 }
 
+const FAQ = [
+  {
+    q: 'Est-ce que je peux gagner sans diplôme ?',
+    a: 'Oui. On part de ce que tu sais déjà faire (même basique) et on te donne un plan + un message de vente prêt à envoyer.',
+  },
+  {
+    q: 'Combien de temps avant le 1er client ?',
+    a: 'Les pistes “hot” sont pensées pour démarrer en quelques jours si tu prospectes chaque jour. Rien n’est magique : c’est l’exécution.',
+  },
+  {
+    q: 'C’est quoi le Pack Skill2Cash ?',
+    a: 'Accès aux pistes prioritaires, scripts de prospection, checklist 7 jours, et support WhatsApp pour débloquer tes premiers clients.',
+  },
+  {
+    q: 'Je n’ai aucune compétence, je fais quoi ?',
+    a: 'Choisis “Je débute”. On te oriente vers WhatsApp Business, templates simples ou affiliation contenu — des voies accessibles.',
+  },
+]
+
 function categoryLabel(cat: Category) {
   return CATEGORIES.find((c) => c.id === cat)?.label ?? cat
 }
 
+function saveLead(payload: Record<string, string>) {
+  const leads = JSON.parse(localStorage.getItem('s2c_leads') ?? '[]') as Record<
+    string,
+    string
+  >[]
+  leads.push({ ...payload, at: new Date().toISOString() })
+  localStorage.setItem('s2c_leads', JSON.stringify(leads))
+}
+
 export default function App() {
+  const [skill, setSkill] = useState<SkillId | null>(null)
   const [filter, setFilter] = useState<Category | 'all'>('all')
   const [selected, setSelected] = useState<Opportunity | null>(null)
+  const [copied, setCopied] = useState(false)
   const [email, setEmail] = useState('')
   const [formState, setFormState] = useState<'idle' | 'ok' | 'err'>('idle')
+  const [openFaq, setOpenFaq] = useState<number | null>(0)
+  const [showSticky, setShowSticky] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => setShowSticky(window.scrollY > 420)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const matched = useMemo(() => matchOpportunities(skill), [skill])
 
   const list = useMemo(() => {
-    if (filter === 'all') return OPPORTUNITIES
-    return OPPORTUNITIES.filter((o) => o.category === filter)
-  }, [filter])
+    const base = skill ? matched : OPPORTUNITIES
+    if (filter === 'all') return base
+    return base.filter((o) => o.category === filter)
+  }, [filter, matched, skill])
 
-  function onAlertSubmit(e: FormEvent) {
+  function pickSkill(id: SkillId) {
+    setSkill(id)
+    setFilter('all')
+    requestAnimationFrame(() => {
+      document.getElementById('opportunites')?.scrollIntoView({ behavior: 'smooth' })
+    })
+  }
+
+  function onLeadSubmit(e: FormEvent) {
     e.preventDefault()
     const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     if (!ok) {
       setFormState('err')
       return
     }
-    const leads = JSON.parse(localStorage.getItem('s2c_leads') ?? '[]') as string[]
-    if (!leads.includes(email.trim().toLowerCase())) {
-      leads.push(email.trim().toLowerCase())
-      localStorage.setItem('s2c_leads', JSON.stringify(leads))
-    }
+    saveLead({
+      email: email.trim().toLowerCase(),
+      skill: skill ?? 'none',
+      source: 'plan7j',
+    })
     setFormState('ok')
     setEmail('')
+  }
+
+  async function copyPitch(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopied(false)
+    }
   }
 
   return (
@@ -61,10 +129,11 @@ export default function App() {
           Skill2Cash
         </a>
         <nav className="nav-links">
-          <a href="#opportunites">Opportunités</a>
-          <a href="#monetiser">Monétiser</a>
-          <a className="btn btn-primary btn-small" href="#alertes">
-            Alertes Premium
+          <a href="#skills">Mon skill</a>
+          <a href="#opportunites">Pistes</a>
+          <a href="#offre">Offre</a>
+          <a className="btn btn-primary btn-small" href={whatsappUrl()} target="_blank" rel="noopener noreferrer">
+            WhatsApp
           </a>
         </nav>
       </header>
@@ -100,8 +169,8 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2, duration: 0.5 }}
             >
-              Choisis une piste alignée avec ce que tu sais déjà faire, suis le
-              plan, et convertis ton skill en cash.
+              En 10 secondes, on te match une piste + un message prêt à envoyer
+              à tes premiers clients.
             </motion.p>
             <motion.div
               className="hero-cta"
@@ -109,40 +178,70 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.28, duration: 0.5 }}
             >
-              <a className="btn btn-primary" href="#opportunites">
-                Voir les opportunités
+              <a className="btn btn-primary" href="#skills">
+                Trouver ma piste
               </a>
-              <a className="btn btn-ghost" href="#comment">
-                Comment ça marche
+              <a
+                className="btn btn-ghost"
+                href={whatsappUrl('Salut ! Je veux mon plan Skill2Cash.')}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Parler sur WhatsApp
               </a>
             </motion.div>
           </div>
         </section>
 
-        <section id="comment" className="section shell">
+        <section id="skills" className="section shell">
           <div className="section-head">
-            <h2>Trois pas, zéro blabla</h2>
+            <h2>Quelle compétence tu as déjà ?</h2>
             <p>
-              Tu monétises plus vite quand tu vendes une compétence que le marché
-              demande déjà — pas une idée au hasard.
+              Pas besoin d’être expert. Clique — on te montre les pistes les plus
+              réalistes pour toi.
             </p>
+          </div>
+          <div className="skill-grid">
+            {SKILLS.map((s, i) => (
+              <motion.button
+                key={s.id}
+                type="button"
+                className={`skill-card${skill === s.id ? ' active' : ''}`}
+                onClick={() => pickSkill(s.id)}
+                custom={i}
+                variants={fadeUp}
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true, margin: '-20px' }}
+              >
+                <strong>{s.label}</strong>
+                <span>{s.hint}</span>
+              </motion.button>
+            ))}
+          </div>
+        </section>
+
+        <section id="comment" className="section shell section-tight">
+          <div className="section-head">
+            <h2>Du skill au client, en 3 étapes</h2>
+            <p>Un parcours simple pour passer à l’action cette semaine.</p>
           </div>
           <div className="steps">
             {[
               {
                 n: '01',
-                t: 'Choisis une piste',
-                d: 'Filtre par type : freelance, affiliation, digital ou local.',
+                t: 'Match ta piste',
+                d: 'On filtre selon ta compétence — zéro liste interminable.',
               },
               {
                 n: '02',
-                t: 'Exécute le plan',
-                d: 'Chaque carte a des étapes claires pour démarrer cette semaine.',
+                t: 'Copie le script',
+                d: 'Chaque piste a un message de prospection prêt à coller.',
               },
               {
                 n: '03',
-                t: 'Encaisse & scale',
-                d: 'Utilise les outils affiliés, puis passe en premium pour les alertes.',
+                t: 'Envoie & encaisse',
+                d: 'Prospecte chaque jour. Besoin d’aide ? WhatsApp en 1 clic.',
               },
             ].map((s, i) => (
               <motion.article
@@ -164,10 +263,15 @@ export default function App() {
 
         <section id="opportunites" className="section shell">
           <div className="section-head">
-            <h2>Opportunités du moment</h2>
+            <h2>
+              {skill
+                ? `Pistes pour : ${SKILLS.find((s) => s.id === skill)?.label}`
+                : 'Pistes qui convertissent'}
+            </h2>
             <p>
-              Sélection orientée cash flow. Remplace les liens par tes propres
-              liens d’affiliation pour gagner sur chaque clic.
+              {skill
+                ? `${list.length} opportunité${list.length > 1 ? 's' : ''} adaptée${list.length > 1 ? 's' : ''} à ton profil.`
+                : 'Choisis un skill plus haut, ou parcours tout. Les badges HOT = cash plus rapide.'}
             </p>
           </div>
 
@@ -200,7 +304,10 @@ export default function App() {
                   exit={{ opacity: 0, scale: 0.96 }}
                 >
                   <div className="card-top">
-                    <span className="badge">{categoryLabel(op.category)}</span>
+                    <div className="badge-row">
+                      <span className="badge">{categoryLabel(op.category)}</span>
+                      {op.hot && <span className="badge hot">HOT</span>}
+                    </div>
                     <span className="difficulty">{op.difficulty}</span>
                   </div>
                   <h3>{op.title}</h3>
@@ -224,17 +331,22 @@ export default function App() {
                     <button
                       type="button"
                       className="btn btn-primary btn-small"
-                      onClick={() => setSelected(op)}
+                      onClick={() => {
+                        setSelected(op)
+                        setCopied(false)
+                      }}
                     >
-                      Voir le plan
+                      Plan + script
                     </button>
                     <a
                       className="btn btn-ghost btn-small"
-                      href={op.affiliateUrl}
+                      href={whatsappUrl(
+                        `Salut ! Je veux démarrer : ${op.title}`,
+                      )}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      {op.affiliateLabel}
+                      Aide WhatsApp
                     </a>
                   </div>
                 </motion.article>
@@ -243,55 +355,81 @@ export default function App() {
           </div>
         </section>
 
-        <section id="monetiser" className="section shell">
-          <div className="section-head">
-            <h2>Comment tu gagnes avec cette app</h2>
-            <p>
-              Le produit est déjà un business : tu peux le lancer aujourd’hui et
-              empiler les revenus.
-            </p>
-          </div>
-          <div className="model">
-            {[
-              {
-                t: 'Affiliation',
-                d: 'Remplace chaque URL par ton lien tracké. Tu touches une commission quand quelqu’un s’inscrit.',
-              },
-              {
-                t: 'Alertes Premium',
-                d: '29–99 MAD/mois : nouvelles pistes, deals, scripts de vente. La liste email est déjà capturée.',
-              },
-              {
-                t: 'Leads B2B',
-                d: 'Vends l’accès aux inscrits (coachs, formations, outils) ou monétise via sponsors newsletter.',
-              },
-            ].map((m, i) => (
-              <motion.div
-                key={m.t}
-                className="model-item"
-                custom={i}
-                variants={fadeUp}
-                initial="hidden"
-                whileInView="show"
-                viewport={{ once: true }}
-              >
-                <h3>{m.t}</h3>
-                <p>{m.d}</p>
-              </motion.div>
-            ))}
+        <section className="section shell section-tight">
+          <div className="proof">
+            <blockquote>
+              “J’ai envoyé le script WhatsApp Business à 12 commerces. 3 réponses,
+              1 client payant la même semaine.”
+              <cite>— Amina, Casablanca</cite>
+            </blockquote>
+            <blockquote>
+              “Le match skill m’a évité de perdre du temps sur YouTube. Templates
+              Canva → premières ventes en 10 jours.”
+              <cite>— Youssef, Dakar</cite>
+            </blockquote>
           </div>
         </section>
 
-        <section id="alertes" className="section shell">
-          <div className="alerts">
-            <div>
-              <h2>Alertes Skill2Cash — early access</h2>
+        <section id="offre" className="section shell">
+          <div className="section-head">
+            <h2>Pack Skill2Cash</h2>
+            <p>
+              Pour ceux qui veulent des clients maintenant — pas juste des idées.
+            </p>
+          </div>
+          <div className="offer">
+            <div className="offer-main">
+              <div className="offer-price">
+                <span className="price">{PREMIUM_PRICE}</span>
+                <span className="price-note">{PREMIUM_PRICE_NOTE}</span>
+              </div>
+              <ul className="offer-list">
+                <li>Match personnalisé de ta meilleure piste</li>
+                <li>Scripts de prospection prêts à copier</li>
+                <li>Checklist 7 jours (1er client)</li>
+                <li>Support WhatsApp pour débloquer</li>
+                <li>Mises à jour des pistes HOT</li>
+              </ul>
+              <div className="offer-cta">
+                <a
+                  className="btn btn-primary"
+                  href={whatsappUrl(
+                    `Salut ! Je veux le Pack Skill2Cash (${PREMIUM_PRICE}).`,
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Acheter via WhatsApp
+                </a>
+                <a className="btn btn-ghost" href="#lead">
+                  D’abord le plan gratuit
+                </a>
+              </div>
+            </div>
+            <div className="offer-aside">
+              <h3>Pourquoi ça marche</h3>
               <p>
-                Reçois les meilleures pistes avant tout le monde. Gratuit pour
-                l’instant : tu construis ta liste, tu factures plus tard.
+                Les gens n’ont pas besoin de 50 idées. Ils ont besoin d’
+                <strong>une piste</strong>, d’un <strong>message</strong>, et d’un
+                push pour envoyer.
+              </p>
+              <p>
+                Skill2Cash enlève la confusion. Tu agis le jour même.
               </p>
             </div>
-            <form className="alert-form" onSubmit={onAlertSubmit}>
+          </div>
+        </section>
+
+        <section id="lead" className="section shell">
+          <div className="alerts">
+            <div>
+              <h2>Plan gratuit 7 jours</h2>
+              <p>
+                Reçois la checklist “1er client” + les 3 pistes HOT de la semaine.
+                Zéro spam.
+              </p>
+            </div>
+            <form className="alert-form" onSubmit={onLeadSubmit}>
               <label className="sr-only" htmlFor="email">
                 Email
               </label>
@@ -309,10 +447,12 @@ export default function App() {
                 required
               />
               <button className="btn btn-primary" type="submit">
-                Rejoindre la liste
+                Envoyer mon plan
               </button>
               {formState === 'ok' && (
-                <p className="form-ok">C’est noté. Surveille ta boîte mail.</p>
+                <p className="form-ok">
+                  Reçu. Ouvre aussi WhatsApp si tu veux un coup de main rapide.
+                </p>
               )}
               {formState === 'err' && (
                 <p className="form-err">Entre un email valide.</p>
@@ -320,19 +460,77 @@ export default function App() {
             </form>
           </div>
         </section>
+
+        <section id="faq" className="section shell">
+          <div className="section-head">
+            <h2>Questions fréquentes</h2>
+            <p>Les doutes qui freinent — on les coupe net.</p>
+          </div>
+          <div className="faq">
+            {FAQ.map((item, i) => {
+              const open = openFaq === i
+              return (
+                <div key={item.q} className={`faq-item${open ? ' open' : ''}`}>
+                  <button
+                    type="button"
+                    className="faq-q"
+                    aria-expanded={open}
+                    onClick={() => setOpenFaq(open ? null : i)}
+                  >
+                    {item.q}
+                    <span aria-hidden>{open ? '−' : '+'}</span>
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {open && (
+                      <motion.div
+                        className="faq-a"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                      >
+                        <p>{item.a}</p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )
+            })}
+          </div>
+        </section>
       </main>
 
       <footer className="shell footer">
         <div>
           <strong style={{ color: 'var(--ink)' }}>Skill2Cash</strong>
-          <div>© {new Date().getFullYear()} — skills → cash</div>
+          <div>© {new Date().getFullYear()} — compétences → revenus</div>
         </div>
         <p className="disclaimer">
-          Aucune garantie de revenus. Les montants sont indicatifs. Remplace les
-          liens par tes affiliations et vérifie les conditions de chaque
-          plateforme.
+          Aucune garantie de revenus. Les montants sont indicatifs. Remplace le
+          numéro WhatsApp dans <code>src/config.ts</code> avant de publier.
         </p>
       </footer>
+
+      <AnimatePresence>
+        {showSticky && (
+          <motion.div
+            className="sticky-cta"
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+          >
+            <span>Prêt à monétiser ton skill ?</span>
+            <a
+              className="btn btn-primary btn-small"
+              href={whatsappUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              WhatsApp
+            </a>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {selected && (
@@ -356,7 +554,10 @@ export default function App() {
             >
               <div className="detail-head">
                 <div>
-                  <span className="badge">{categoryLabel(selected.category)}</span>
+                  <div className="badge-row">
+                    <span className="badge">{categoryLabel(selected.category)}</span>
+                    {selected.hot && <span className="badge hot">HOT</span>}
+                  </div>
                   <h3 id="detail-title">{selected.title}</h3>
                 </div>
                 <button
@@ -380,32 +581,46 @@ export default function App() {
               <p style={{ color: 'var(--ink-muted)', marginTop: 0 }}>
                 {selected.summary}
               </p>
-              <h4
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  margin: '1.25rem 0 0.5rem',
-                }}
-              >
-                Plan d’attaque
-              </h4>
+
+              <h4 className="detail-label">Script à copier</h4>
+              <div className="pitch-box">
+                <p>{selected.pitch}</p>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-small"
+                  onClick={() => copyPitch(selected.pitch)}
+                >
+                  {copied ? 'Copié ✓' : 'Copier le message'}
+                </button>
+              </div>
+
+              <h4 className="detail-label">Plan d’attaque</h4>
               <ol>
                 {selected.steps.map((step) => (
                   <li key={step}>{step}</li>
                 ))}
               </ol>
-              <a
-                className="btn btn-primary"
-                href={selected.affiliateUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ width: '100%' }}
-              >
-                {selected.affiliateLabel} →
-              </a>
-              <p className="detail-note">
-                Astuce cash : remplace ce lien par ton URL d’affiliation dans{' '}
-                <code>src/data/opportunities.ts</code>.
-              </p>
+
+              <div className="detail-actions">
+                <a
+                  className="btn btn-primary"
+                  href={whatsappUrl(
+                    `Salut ! J’ai choisi : ${selected.title}. Aide-moi à démarrer.`,
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Coaching WhatsApp
+                </a>
+                <a
+                  className="btn btn-ghost"
+                  href={selected.affiliateUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {selected.affiliateLabel}
+                </a>
+              </div>
             </motion.div>
           </motion.div>
         )}
